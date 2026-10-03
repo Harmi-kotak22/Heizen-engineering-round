@@ -6,13 +6,13 @@ async function bootstrap() {
 
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'https://heizen-engineering-round.vercel.app/',
+     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+      credentials: true,
   });
 
-  const port = process.env.PORT ?? 3001;
+  await app.listen(process.env.PORT || 3000, '0.0.0.0');
 
-  await app.listen(port);
-
-  console.log(`Backend running on port ${port}`);
+  //console.log(`Backend running on port ${port}`);
 }
 
 bootstrap();
