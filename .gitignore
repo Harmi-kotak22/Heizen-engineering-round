@@ -1,0 +1,29 @@
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+
+# Build outputs
+dist/
+build/
+
+# Generated Prisma Client
+backend/src/generated/prisma/
+
+# Logs
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
