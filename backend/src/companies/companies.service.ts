@@ -280,6 +280,45 @@ export class CompaniesService {
     return { removed: true };
   }
 
+  async listMenuVisibility(companyId: string) {
+    await this.ensureCompanyExists(companyId);
+    const [categories, dishes] = await Promise.all([
+      this.prisma.companyCategoryVisibility.findMany({
+        where: { companyId },
+        include: { category: { select: { id: true, name: true } } },
+        orderBy: { category: { name: 'asc' } },
+      }),
+      this.prisma.companyDishVisibility.findMany({
+        where: { companyId },
+        include: { dish: { select: { id: true, name: true, sku: true } } },
+        orderBy: { dish: { name: 'asc' } },
+      }),
+    ]);
+    return { categories, dishes };
+  }
+
+  async setCategoryVisibility(companyId: string, categoryId: string, visible: boolean) {
+    await this.ensureCompanyExists(companyId);
+    const category = await this.prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } });
+    if (!category) throw new NotFoundException('Category not found');
+    return this.prisma.companyCategoryVisibility.upsert({
+      where: { companyId_categoryId: { companyId, categoryId } },
+      update: { visible },
+      create: { companyId, categoryId, visible },
+    });
+  }
+
+  async setDishVisibility(companyId: string, dishId: string, visible: boolean) {
+    await this.ensureCompanyExists(companyId);
+    const dish = await this.prisma.dish.findUnique({ where: { id: dishId }, select: { id: true } });
+    if (!dish) throw new NotFoundException('Dish not found');
+    return this.prisma.companyDishVisibility.upsert({
+      where: { companyId_dishId: { companyId, dishId } },
+      update: { visible },
+      create: { companyId, dishId, visible },
+    });
+  }
+
   async listEmployees(query: EmployeeListQueryDto) {
     const where: Prisma.EmployeeWhereInput = {
       ...(query.companyId ? { companyId: query.companyId } : {}),

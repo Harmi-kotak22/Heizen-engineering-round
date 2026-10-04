@@ -628,6 +628,7 @@ export class CatalogueService {
     if (dto.name) data.name = dto.name.trim();
     if (dto.required !== undefined) data.required = dto.required;
     if (dto.displayOrder !== undefined) data.displayOrder = dto.displayOrder;
+    if (dto.active !== undefined) data.active = dto.active;
 
     return this.prisma.optionGroup.update({
       where: { id },

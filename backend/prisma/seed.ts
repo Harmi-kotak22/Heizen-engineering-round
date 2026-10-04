@@ -1209,7 +1209,7 @@ async function seedBusinessData() {
     {
       name: 'Northstar Finance',
       domain: 'northstarfinance.com',
-      tierId: standardTier.id,
+      tierId: null,
       billingName: 'Priya Shah',
       billingEmail: 'accounts@northstarfinance.com',
       billingPhone: '+1 415 555 0142',

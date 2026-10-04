@@ -25,6 +25,7 @@ import {
   EmployeeDto,
   EmployeeListQueryDto,
   EmployeeUpdateDto,
+  VisibilityDto,
 } from './dto/companies.dto.js';
 import { CompaniesService } from './companies.service.js';
 
@@ -165,6 +166,32 @@ export class CompaniesController {
     @Param('holidayId', new ParseUUIDPipe()) holidayId: string,
   ) {
     return this.companiesService.removeHoliday(companyId, holidayId);
+  }
+
+  @Get('companies/:companyId/menu-visibility')
+  @RequirePermission('companies.read')
+  listMenuVisibility(@Param('companyId', new ParseUUIDPipe()) companyId: string) {
+    return this.companiesService.listMenuVisibility(companyId);
+  }
+
+  @Patch('companies/:companyId/menu-visibility/categories/:categoryId')
+  @RequirePermission('companies.manage')
+  setCategoryVisibility(
+    @Param('companyId', new ParseUUIDPipe()) companyId: string,
+    @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+    @Body() dto: VisibilityDto,
+  ) {
+    return this.companiesService.setCategoryVisibility(companyId, categoryId, dto.visible);
+  }
+
+  @Patch('companies/:companyId/menu-visibility/dishes/:dishId')
+  @RequirePermission('companies.manage')
+  setDishVisibility(
+    @Param('companyId', new ParseUUIDPipe()) companyId: string,
+    @Param('dishId', new ParseUUIDPipe()) dishId: string,
+    @Body() dto: VisibilityDto,
+  ) {
+    return this.companiesService.setDishVisibility(companyId, dishId, dto.visible);
   }
 
   @Get('employees')

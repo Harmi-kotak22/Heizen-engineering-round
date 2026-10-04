@@ -253,6 +253,7 @@ model OptionGroup {
   name         String
   required     Boolean             @default(false)
   displayOrder Int                 @default(0)
+  active       Boolean             @default(true)
   dish         Dish                @relation(fields: [dishId], references: [id], onDelete: Cascade)
   options      OptionGroupOption[]
   sizes        OptionGroupSize[]

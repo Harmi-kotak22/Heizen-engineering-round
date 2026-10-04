@@ -286,6 +286,10 @@ export class UpdateOptionGroupDto {
   @IsInt()
   @Min(0)
   displayOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }
 
 export class AddOptionToGroupDto {

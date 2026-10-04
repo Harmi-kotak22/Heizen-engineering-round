@@ -14,6 +14,11 @@ export type ResolvedItemPrice = {
   source: PriceSource;
 };
 
+export type PricingItemInput = {
+  id: string;
+  costPrice: Prisma.Decimal | string;
+};
+
 @Injectable()
 export class PricingService {
   constructor(private readonly prisma: PrismaService) {}
@@ -281,6 +286,108 @@ export class PricingService {
     }
 
     return { price: null, source: 'MISSING' };
+  }
+
+  async resolveDishPrices(
+    tierId: string,
+    items: PricingItemInput[],
+  ): Promise<Map<string, ResolvedItemPrice>> {
+    return this.resolvePricesInBatch(tierId, 'dish', items);
+  }
+
+  async resolveOptionPrices(
+    tierId: string,
+    items: PricingItemInput[],
+  ): Promise<Map<string, ResolvedItemPrice>> {
+    return this.resolvePricesInBatch(tierId, 'option', items);
+  }
+
+  private async resolvePricesInBatch(
+    tierId: string,
+    itemType: 'dish' | 'option',
+    items: PricingItemInput[],
+  ): Promise<Map<string, ResolvedItemPrice>> {
+    const tier = await this.prisma.pricingTier.findUnique({ where: { id: tierId } });
+    if (!tier) throw new NotFoundException('Pricing tier not found');
+    if (!items.length) return new Map();
+
+    const tiers = await this.prisma.pricingTier.findMany({
+      select: {
+        id: true,
+        derivationType: true,
+        derivationSourceTierId: true,
+        derivationFactor: true,
+      },
+    });
+    const tierById = new Map(tiers.map((item) => [item.id, item]));
+    const neededTierIds = new Set<string>();
+    const collectChain = (id: string) => {
+      if (neededTierIds.has(id)) return;
+      neededTierIds.add(id);
+      const current = tierById.get(id);
+      if (current?.derivationType === 'TIER_PERCENTAGE' && current.derivationSourceTierId) {
+        collectChain(current.derivationSourceTierId);
+      }
+    };
+    collectChain(tierId);
+
+    const ids = items.map((item) => item.id);
+    const rows = itemType === 'dish'
+      ? await this.prisma.dishPrice.findMany({
+          where: { pricingTierId: { in: [...neededTierIds] }, dishId: { in: ids } },
+        })
+      : await this.prisma.optionPrice.findMany({
+          where: { pricingTierId: { in: [...neededTierIds] }, optionId: { in: ids } },
+        });
+    const priceByKey = new Map<string, { price: Prisma.Decimal; source: string }>();
+    for (const row of rows) {
+      const itemId = itemType === 'dish'
+        ? (row as { dishId: string }).dishId
+        : (row as { optionId: string }).optionId;
+      priceByKey.set(`${row.pricingTierId}:${itemId}`, row);
+    }
+
+    const result = new Map<string, ResolvedItemPrice>();
+    for (const item of items) {
+      const visited = new Set<string>();
+      const resolve = (currentTierId: string): ResolvedItemPrice => {
+        if (visited.has(currentTierId)) {
+          throw new BadRequestException('Pricing derivation cycle detected');
+        }
+        visited.add(currentTierId);
+        const row = priceByKey.get(`${currentTierId}:${item.id}`);
+        if (row?.source === 'OVERRIDE') return { price: row.price, source: 'OVERRIDE' };
+        if (row && (row.source === 'MANUAL' || row.source === 'DERIVED')) {
+          return { price: row.price, source: row.source as 'MANUAL' | 'DERIVED' };
+        }
+        const currentTier = tierById.get(currentTierId);
+        if (!currentTier) return { price: null, source: 'MISSING' };
+        if (currentTier.derivationType === 'COST_FACTOR') {
+          const factor = this.toPositiveDecimal(currentTier.derivationFactor, 'Cost multiplier is required');
+          return {
+            price: this.roundUpToNickel(this.toDecimal(item.costPrice).mul(factor)),
+            source: 'DERIVED',
+          };
+        }
+        if (currentTier.derivationType === 'TIER_PERCENTAGE' && currentTier.derivationSourceTierId) {
+          const base = resolve(currentTier.derivationSourceTierId);
+          if (!base.price) return { price: null, source: 'MISSING' };
+          const percentage = this.toNonNegativeDecimal(
+            currentTier.derivationFactor,
+            'Percentage derivation rate is required',
+          );
+          return {
+            price: this.roundUpToNickel(
+              base.price.mul(new Prisma.Decimal('1').add(percentage)),
+            ),
+            source: 'DERIVED',
+          };
+        }
+        return { price: null, source: 'MISSING' };
+      };
+      result.set(item.id, resolve(tierId));
+    }
+    return result;
   }
 
   async updateDishPrice(tierId: string, dishId: string, dto: SetPricingItemPriceDto) {

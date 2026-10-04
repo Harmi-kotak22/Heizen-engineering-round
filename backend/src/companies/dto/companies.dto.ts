@@ -121,6 +121,11 @@ export class CompanyStatusDto {
   active!: boolean;
 }
 
+export class VisibilityDto {
+  @IsBoolean()
+  visible!: boolean;
+}
+
 export class CompanyDomainDto {
   @IsString()
   @IsNotEmpty()
