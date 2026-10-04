@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Heizen Kitchen Operations",
-  description: "Minimal authentication and catalogue testing UI",
+  title: "FernLeaf Kitchen Operations",
+  description: "Kitchen operations management for FernLeaf",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

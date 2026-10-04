@@ -34,7 +34,7 @@ export default function LoginPage() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-5">
       <form onSubmit={submit} className="space-y-4 rounded border bg-white p-6 shadow-sm">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">Heizen Kitchen Operations</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-800">FernLeaf Kitchen Operations</p>
           <h1 className="mt-2 text-2xl font-bold">Sign in</h1>
           <p className="mt-1 text-sm text-slate-700">Sign in with your account to continue.</p>
         </div>

@@ -56,7 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-5 py-4">
-          <Link href="/" className="font-semibold">Heizen Kitchen Operations</Link>
+          <Link href="/" className="font-semibold">FernLeaf Kitchen Operations</Link>
           <nav className="flex flex-wrap gap-4 text-sm">
             <Link href="/">Home</Link>
             {user?.permissions.includes('catalogue.read') && <>
