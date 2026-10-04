@@ -2258,7 +2258,209 @@ async function seedBusinessData() {
     }
   }
 
+  await seedDispatchWorkflowData();
+
   console.log('✅ Companies, employees and settings seeded');
+}
+
+async function seedDispatchWorkflowData() {
+  console.log('🚚 Seeding dispatch and driver delivery workflow data...');
+
+  const driverUser = await prisma.user.findUnique({
+    where: { email: 'driver@test.com' },
+  });
+  if (!driverUser) {
+    console.warn('Driver user not found, skipping dispatch workflow seed');
+    return;
+  }
+
+  const company = await prisma.company.findFirst({
+    where: { name: 'Northstar Finance' },
+    include: {
+      addresses: true,
+      employees: true,
+      priceTier: true,
+    },
+  });
+
+  if (!company || !company.addresses.length || !company.employees.length) {
+    console.warn('Demo company not found, skipping dispatch workflow seed');
+    return;
+  }
+
+  const address = company.addresses[0];
+  const employee1 = company.employees[0];
+  const employee2 = company.employees[1] ?? employee1;
+  const dish = await prisma.dish.findFirst({
+    where: { active: true },
+    include: { station: true },
+  });
+
+  if (!dish) return;
+
+  const dishPrice = await prisma.dishPrice.findFirst({
+    where: { dishId: dish.id },
+  }) ?? { price: new Prisma.Decimal('12.00') };
+
+  const setting = await prisma.kitchenSetting.findUnique({ where: { id: 1 } });
+  const timeZone = setting?.timezone || 'America/Los_Angeles';
+
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(new Date())
+      .filter((part) => part.type !== 'literal')
+      .map((part) => [part.type, Number(part.value)]),
+  ) as { year: number; month: number; day: number };
+
+  const today = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const now = new Date();
+
+  async function upsertDrop(deliveryTime: string, status: any, driverId: string | null, extra: any = {}) {
+    return prisma.drop.upsert({
+      where: {
+        companyId_addressId_deliveryDate_deliveryTime: {
+          companyId: company!.id,
+          addressId: address.id,
+          deliveryDate: today,
+          deliveryTime,
+        },
+      },
+      update: {
+        status,
+        driverId,
+        ...extra,
+      },
+      create: {
+        companyId: company!.id,
+        addressId: address.id,
+        deliveryDate: today,
+        deliveryTime,
+        status,
+        driverId,
+        ...extra,
+      },
+    });
+  }
+
+  async function upsertOrder(orderNumber: string, employee: any, deliveryTime: string, dropId: string, orderStatus: any, kitchenReady: boolean) {
+    const unitPrice = new Prisma.Decimal(dishPrice.price);
+    const order = await prisma.order.upsert({
+      where: { orderNumber },
+      update: {
+        dropId,
+        status: orderStatus,
+        kitchenReadyAt: kitchenReady ? now : null,
+        deliveredAt: orderStatus === 'DELIVERED' ? now : null,
+      },
+      create: {
+        orderNumber,
+        companyId: company!.id,
+        employeeId: employee.id,
+        deliveryDate: today,
+        deliveryTime,
+        deliveryAddressId: address.id,
+        deliveryAddressSnapshot: {
+          label: address.label,
+          line1: address.line1,
+          city: address.city,
+          state: address.state,
+          postalCode: address.postalCode,
+        },
+        packaging: company!.defaultPackaging ?? 'Standard Compostable Box',
+        status: orderStatus,
+        subtotal: unitPrice,
+        total: unitPrice,
+        placedAt: now,
+        confirmedAt: now,
+        kitchenReadyAt: kitchenReady ? now : null,
+        deliveredAt: orderStatus === 'DELIVERED' ? now : null,
+        dropId,
+        lines: {
+          create: [{
+            dishId: dish!.id,
+            dishNameSnapshot: dish!.name,
+            dishSkuSnapshot: dish!.sku,
+            quantity: 1,
+            unitPrice,
+            lineTotal: unitPrice,
+            combinations: {
+              create: [{
+                quantity: 1,
+                portionSizeNameSnapshot: 'Regular',
+                unitPrice,
+                totalPrice: unitPrice,
+              }],
+            },
+          }],
+        },
+      },
+      include: {
+        lines: {
+          include: {
+            combinations: true,
+          },
+        },
+      },
+    });
+
+    for (const line of order.lines) {
+      for (const comb of line.combinations) {
+        await prisma.kitchenPrepUnit.upsert({
+          where: { orderCombinationId: comb.id },
+          update: {
+            stationId: dish!.stationId,
+            status: kitchenReady ? 'DONE' : 'PENDING',
+            startedAt: kitchenReady ? now : null,
+            completedAt: kitchenReady ? now : null,
+          },
+          create: {
+            orderId: order.id,
+            orderCombinationId: comb.id,
+            stationId: dish!.stationId,
+            status: kitchenReady ? 'DONE' : 'PENDING',
+            startedAt: kitchenReady ? now : null,
+            completedAt: kitchenReady ? now : null,
+          },
+        });
+      }
+    }
+  }
+
+  // 1. OUT_FOR_DELIVERY drop for today (assigned to driver@test.com)
+  const drop1 = await upsertDrop('11:30', 'OUT_FOR_DELIVERY', driverUser.id, {
+    outForDeliveryAt: now,
+  });
+  await upsertOrder('DEMO-DISPATCH-001', employee1, '11:30', drop1.id, 'CONFIRMED', true);
+
+  // 2. DISPATCH_READY drop for today (assigned to driver@test.com)
+  const drop2 = await upsertDrop('12:15', 'DISPATCH_READY', driverUser.id);
+  await upsertOrder('DEMO-DISPATCH-002', employee2, '12:15', drop2.id, 'CONFIRMED', true);
+
+  // 3. GROUPED drop for today (multiple orders for same company/address/date/time)
+  const drop3 = await upsertDrop('13:00', 'KITCHEN_READY', driverUser.id);
+  await upsertOrder('DEMO-DISPATCH-GRP-1', employee1, '13:00', drop3.id, 'CONFIRMED', true);
+  await upsertOrder('DEMO-DISPATCH-GRP-2', employee2, '13:00', drop3.id, 'CONFIRMED', true);
+
+  // 4. UNASSIGNED drop for today (KITCHEN_READY, no driver)
+  const drop4 = await upsertDrop('14:00', 'KITCHEN_READY', null);
+  await upsertOrder('DEMO-DISPATCH-UNASSIGNED', employee1, '14:00', drop4.id, 'CONFIRMED', true);
+
+  // 5. DELIVERED drop for today (with on-time status and delivery note)
+  const drop5 = await upsertDrop('10:00', 'DELIVERED', driverUser.id, {
+    deliveredAt: now,
+    deliveredOnTime: true,
+    deliveryNote: 'Delivered to Northstar front desk reception.',
+    deliveryPhotoUrl: 'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?w=300',
+  });
+  await upsertOrder('DEMO-DISPATCH-DELIVERED', employee1, '10:00', drop5.id, 'DELIVERED', true);
+
+  console.log('✅ Dispatch & Driver delivery workflow data seeded');
 }
 
 main()

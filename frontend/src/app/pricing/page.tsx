@@ -326,12 +326,19 @@ export default function PricingPage() {
                   setFactor,
                   selectedTier.id,
                 )}
-                {canManage && <button className="rounded bg-slate-900 px-4 py-2 text-white">Save tier</button>}
+                {canManage && (
+                  <button className="rounded bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-800">
+                    Save tier
+                  </button>
+                )}
               </form>
               <div className="flex items-center gap-3">
                 <span className="text-sm">{selectedTier.isDefault ? 'Default tier' : 'Not the default tier'}</span>
                 {canManage && !selectedTier.isDefault && (
-                  <button onClick={setDefault} className="rounded border px-3 py-2 text-sm">
+                  <button
+                    onClick={setDefault}
+                    className="rounded border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
                     Make default
                   </button>
                 )}
@@ -358,7 +365,9 @@ export default function PricingPage() {
                 newFactor,
                 setNewFactor,
               )}
-              <button className="rounded border px-4 py-2 sm:col-span-2">Create tier</button>
+              <button className="rounded bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-800 sm:col-span-2">
+                Create tier
+              </button>
             </form>
           )}
         </section>
@@ -367,13 +376,19 @@ export default function PricingPage() {
           <h2 className="font-semibold">Tier price coverage</h2>
           <div className="flex gap-2">
             <button
-              className={`rounded px-3 py-2 text-sm ${itemType === 'dishes' ? 'bg-slate-900 text-white' : 'border'}`}
+              className={`rounded px-3 py-2 text-sm font-medium transition-colors ${itemType === 'dishes'
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
               onClick={() => setItemType('dishes')}
             >
               Dishes
             </button>
             <button
-              className={`rounded px-3 py-2 text-sm ${itemType === 'options' ? 'bg-slate-900 text-white' : 'border'}`}
+              className={`rounded px-3 py-2 text-sm font-medium transition-colors ${itemType === 'options'
+                  ? 'bg-slate-900 text-white'
+                  : 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
               onClick={() => setItemType('options')}
             >
               Options
@@ -402,11 +417,32 @@ export default function PricingPage() {
                     </td>
                     <td className="py-2 pr-3">{item.source}</td>
                     {canManage && (
-                      <td className="space-x-1 py-2 whitespace-nowrap">
-                        <button disabled={loading} className="rounded border px-2 py-1" onClick={() => savePrice(item, false)}>Manual</button>
-                        <button disabled={loading} className="rounded border px-2 py-1" onClick={() => savePrice(item, true)}>Override</button>
+                      <td className="space-x-1.5 py-2 whitespace-nowrap">
+                        <button
+                          disabled={loading}
+                          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() => savePrice(item, false)}
+                          title="Set a manual fixed price"
+                        >
+                          Manual
+                        </button>
+                        <button
+                          disabled={loading}
+                          className="rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                          onClick={() => savePrice(item, true)}
+                          title="Override price for this tier"
+                        >
+                          Override
+                        </button>
                         {item.source !== 'MISSING' && (
-                          <button disabled={loading} className="rounded border px-2 py-1" onClick={() => clearPrice(item)}>Clear</button>
+                          <button
+                            disabled={loading}
+                            className="rounded border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                            onClick={() => clearPrice(item)}
+                            title="Clear custom price / revert to derivation"
+                          >
+                            Clear
+                          </button>
                         )}
                       </td>
                     )}

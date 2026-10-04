@@ -12,6 +12,7 @@ import { CompaniesModule } from './companies/companies.module.js';
 import { EffectiveMenuModule } from './effective-menu/effective-menu.module.js';
 import { PricingModule } from './pricing/pricing.module.js';
 import { OrdersModule } from './orders/orders.module.js';
+import { DispatchModule } from './dispatch/dispatch.module.js';
 import { PrismaService } from './prisma/prisma.service.js';
 import { ReferenceModule } from './reference/reference.module.js';
 
@@ -40,6 +41,7 @@ import { ReferenceModule } from './reference/reference.module.js';
     CompaniesModule,
     EffectiveMenuModule,
     OrdersModule,
+    DispatchModule,
   ],
   controllers: [AppController, AuthController],
   providers: [
