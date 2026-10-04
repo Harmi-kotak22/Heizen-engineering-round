@@ -428,6 +428,7 @@ model Order {
   drop                    Drop?               @relation(fields: [dropId], references: [id])
   employee                Employee            @relation(fields: [employeeId], references: [id])
   lines                   OrderLine[]
+  events                  OrderEvent[]
 
   @@index([companyId, deliveryDate])
   @@index([status, deliveryDate])
@@ -475,12 +476,27 @@ model OrderCombinationOption {
   combinationId      String           @db.Uuid
   optionId           String?          @db.Uuid
   optionNameSnapshot String
+  optionGroupNameSnapshot String
   price              Decimal          @db.Decimal(10, 2)
   combination        OrderCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
   option             Option?          @relation(fields: [optionId], references: [id])
 
   @@index([combinationId])
   @@index([optionId])
+}
+
+model OrderEvent {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @db.Uuid
+  actorId   String?     @db.Uuid
+  type      String
+  fromStatus OrderStatus?
+  toStatus   OrderStatus?
+  details   Json?
+  createdAt DateTime    @default(now())
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
 }
 
 model KitchenPrepUnit {

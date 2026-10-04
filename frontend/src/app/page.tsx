@@ -33,6 +33,8 @@ export default function Home() {
     ['Pricing', '/pricing', 'View pricing tiers, overrides and gap coverage.'],
     ['Companies', '/companies', 'Manage company delivery settings, addresses and calendars.'],
     ['Employees', '/employees', 'Manage company employees and ordering preferences.'],
+    ['Effective menu', '/effective-menu', 'Preview the menu and prices available to an employee.'],
+    ['Orders', '/orders', 'Create and manage order drafts, placements and lifecycle history.'],
   ];
 
   return (
@@ -69,6 +71,8 @@ export default function Home() {
               if (title === 'Pricing') return user?.permissions.includes('pricing.read');
               if (title === 'Companies') return user?.permissions.includes('companies.read');
               if (title === 'Employees') return user?.permissions.includes('employees.read');
+              if (title === 'Effective menu') return user?.permissions.includes('catalogue.read') && user.permissions.includes('employees.read');
+              if (title === 'Orders') return user?.permissions.includes('orders.read') || user?.permissions.includes('orders.create');
               return true;
             })
             .map(([title, href, description]) => (

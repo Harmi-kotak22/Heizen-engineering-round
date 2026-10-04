@@ -41,6 +41,11 @@ type Address = {
   active: boolean;
 };
 type Tier = { id: string; name: string };
+type VisibilityEntity = { id: string; name: string; sku?: string };
+type VisibilityState = {
+  categories: { categoryId: string; visible: boolean }[];
+  dishes: { dishId: string; visible: boolean }[];
+};
 type Form = Omit<Company, 'id' | 'emailDomains' | 'addresses' | 'holidays'>;
 const dayFields = [
   ['mondayEnabled', 'Monday'],
@@ -60,6 +65,9 @@ export default function CompanyDetailsPage({ params }: { params: Promise<{ id: s
   const [employees, setEmployees] = useState<EmployeeChoice[]>([]);
   const [drivers, setDrivers] = useState<EmployeeChoice[]>([]);
   const [tiers, setTiers] = useState<Tier[]>([]);
+  const [categories, setCategories] = useState<VisibilityEntity[]>([]);
+  const [dishes, setDishes] = useState<VisibilityEntity[]>([]);
+  const [visibility, setVisibility] = useState<VisibilityState>({ categories: [], dishes: [] });
   const [user, setUser] = useState<SessionUser | null>(null);
   const [domain, setDomain] = useState('');
   const [holiday, setHoliday] = useState({ date: '', name: '' });
@@ -99,16 +107,29 @@ export default function CompanyDetailsPage({ params }: { params: Promise<{ id: s
     void params.then(({ id }) => {
       setCompanyId(id);
       load(id).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load company'));
-      api<{ data: EmployeeChoice[] }>('/employees?limit=100&companyId=' + id)
-        .then((result) => setEmployees(result.data))
-        .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load employees'));
       api<EmployeeChoice[]>('/companies/drivers').then(setDrivers)
         .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load drivers'));
       getCurrentUser().then((currentUser) => {
         setUser(currentUser);
+        if (currentUser.permissions.includes('employees.read')) {
+          api<{ data: EmployeeChoice[] }>('/employees?limit=100&companyId=' + id)
+            .then((result) => setEmployees(result.data))
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load employees'));
+        }
         if (currentUser.permissions.includes('pricing.read')) {
           api<Tier[]>('/pricing/tiers').then(setTiers)
             .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load pricing tiers'));
+        }
+        if (currentUser.permissions.includes('catalogue.read')) {
+          api<{ data: VisibilityEntity[] }>('/catalogue/categories?limit=100')
+            .then((result) => setCategories(result.data))
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load categories'));
+          api<{ data: VisibilityEntity[] }>('/catalogue/dishes?limit=100')
+            .then((result) => setDishes(result.data))
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load dishes'));
+          api<VisibilityState>(`/companies/${id}/menu-visibility`)
+            .then(setVisibility)
+            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load company menu visibility'));
         }
       }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : 'Unable to load session'));
     });
@@ -196,6 +217,31 @@ export default function CompanyDetailsPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  async function changeVisibility(kind: 'categories' | 'dishes', itemId: string) {
+    setError('');
+    const entity = kind === 'categories' ? 'categories' : 'dishes';
+    const current = visibility[kind].find((item) =>
+      ('categoryId' in item ? item.categoryId : item.dishId) === itemId,
+    );
+    const nextVisible = current ? !current.visible : false;
+    try {
+      await api(`/companies/${companyId}/menu-visibility/${entity}/${itemId}`, patchBody({ visible: nextVisible }));
+      setVisibility((currentVisibility) => ({
+        ...currentVisibility,
+        [kind]: [
+          ...currentVisibility[kind].filter((item) =>
+            ('categoryId' in item ? item.categoryId : item.dishId) !== itemId,
+          ),
+          kind === 'categories'
+            ? { categoryId: itemId, visible: nextVisible }
+            : { dishId: itemId, visible: nextVisible },
+        ],
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Unable to update company menu visibility');
+    }
+  }
+
   if (!company || !form) return <p>{error || 'Loading company…'}</p>;
 
   function update<K extends keyof Form>(key: K, value: Form[K]) {
@@ -252,6 +298,25 @@ export default function CompanyDetailsPage({ params }: { params: Promise<{ id: s
         {company.holidays.map((item) => <div key={item.id} className="flex items-center justify-between border-b py-2 text-sm"><span>{item.date.slice(0, 10)} · {item.name}</span>{manage && <button className="rounded border px-2 py-1" onClick={() => removeHoliday(item.id)}>Remove</button>}</div>)}
         {manage && <div className="flex flex-wrap gap-2"><input type="date" className="rounded border px-3 py-2" value={holiday.date} onChange={(event) => setHoliday((value) => ({ ...value, date: event.target.value }))} /><input className="rounded border px-3 py-2" placeholder="Holiday name" value={holiday.name} onChange={(event) => setHoliday((value) => ({ ...value, name: event.target.value }))} /><button className="rounded border px-3 py-2" onClick={addHoliday}>Add holiday</button></div>}
       </section>
+
+      {user?.permissions.includes('catalogue.read') && <section className="grid gap-4 rounded border bg-white p-4 lg:grid-cols-2">
+        <div>
+          <h2 className="font-semibold">Category visibility</h2>
+          <div className="mt-2 space-y-2">{categories.map((category) => {
+            const setting = visibility.categories.find((item) => item.categoryId === category.id);
+            const visible = setting?.visible ?? true;
+            return <label key={category.id} className="flex items-center gap-2 text-sm"><input disabled={!manage} type="checkbox" checked={visible} onChange={() => changeVisibility('categories', category.id)} />{category.name}</label>;
+          })}</div>
+        </div>
+        <div>
+          <h2 className="font-semibold">Dish visibility</h2>
+          <div className="mt-2 max-h-72 space-y-2 overflow-y-auto">{dishes.map((dish) => {
+            const setting = visibility.dishes.find((item) => item.dishId === dish.id);
+            const visible = setting?.visible ?? true;
+            return <label key={dish.id} className="flex items-center gap-2 text-sm"><input disabled={!manage} type="checkbox" checked={visible} onChange={() => changeVisibility('dishes', dish.id)} />{dish.name}{dish.sku ? ` (${dish.sku})` : ''}</label>;
+          })}</div>
+        </div>
+      </section>}
     </section>
   );
 }

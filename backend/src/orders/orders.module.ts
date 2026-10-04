@@ -4,10 +4,10 @@ import { JwtModule } from '@nestjs/jwt';
 import { AuthService } from '../auth/auth.service.js';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { PermissionsGuard } from '../auth/permissions.guard.js';
-import { PricingModule } from '../pricing/pricing.module.js';
+import { EffectiveMenuModule } from '../effective-menu/effective-menu.module.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { EffectiveMenuController } from './effective-menu.controller.js';
-import { EffectiveMenuService } from './effective-menu.service.js';
+import { OrdersController } from './orders.controller.js';
+import { OrdersService } from './orders.service.js';
 
 @Module({
   imports: [
@@ -20,16 +20,9 @@ import { EffectiveMenuService } from './effective-menu.service.js';
         return { secret, signOptions: { expiresIn: '15m' } };
       },
     }),
-    PricingModule,
+    EffectiveMenuModule,
   ],
-  controllers: [EffectiveMenuController],
-  providers: [
-    EffectiveMenuService,
-    PrismaService,
-    AuthService,
-    JwtAuthGuard,
-    PermissionsGuard,
-  ],
-  exports: [EffectiveMenuService],
+  controllers: [OrdersController],
+  providers: [OrdersService, PrismaService, AuthService, JwtAuthGuard, PermissionsGuard],
 })
-export class EffectiveMenuModule {}
+export class OrdersModule {}

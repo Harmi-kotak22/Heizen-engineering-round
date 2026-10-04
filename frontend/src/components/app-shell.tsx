@@ -74,6 +74,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {user?.permissions.includes('employees.read') && (
               <Link href="/employees">Employees</Link>
             )}
+            {user?.permissions.includes('catalogue.read') && (
+              <Link href="/effective-menu">Menu preview</Link>
+            )}
+            {(user?.permissions.includes('orders.read') || user?.permissions.includes('orders.create')) && (
+              <Link href="/orders">Orders</Link>
+            )}
           </nav>
           <div className="flex items-center gap-3 text-sm">
             <span>{user?.name} · {user?.role}</span>

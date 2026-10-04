@@ -1798,6 +1798,132 @@ async function seedBusinessData() {
     },
   });
 
+  const demoEmployee = employeeMap['ava.richardson@northstarfinance.com'];
+  const demoCompany = companyMap['Northstar Finance'];
+  const demoAddress = addressMap['Northstar Finance'];
+  const demoDish = dishMap['FL-IND-001'];
+  if (!demoCompany.defaultDeliveryTime || !demoCompany.defaultPackaging) {
+    throw new Error('Demo company delivery defaults must be configured before seeding orders');
+  }
+  const demoDishPrice = await prisma.dishPrice.findUniqueOrThrow({
+    where: {
+      dishId_pricingTierId: {
+        dishId: demoDish.id,
+        pricingTierId: standardTier.id,
+      },
+    },
+  });
+  const demoQuantity = 2;
+  const demoUnitPrice = new Prisma.Decimal(demoDishPrice.price);
+  const demoLineTotal = demoUnitPrice.mul(demoQuantity);
+  const deliveryDate = new Date('2026-12-28T00:00:00.000Z');
+  const deliveryAddressSnapshot = {
+    id: demoAddress.id,
+    label: demoAddress.label,
+    line1: demoAddress.line1,
+    line2: demoAddress.line2,
+    city: demoAddress.city,
+    state: demoAddress.state,
+    postalCode: demoAddress.postalCode,
+    country: demoAddress.country,
+  } satisfies Prisma.InputJsonObject;
+
+  const demoOrders = [
+    { orderNumber: 'DEMO-DRAFT-001', status: 'DRAFT' as const },
+    { orderNumber: 'DEMO-PLACED-001', status: 'PLACED' as const },
+    { orderNumber: 'DEMO-CONFIRMED-001', status: 'CONFIRMED' as const },
+  ];
+
+  for (const fixture of demoOrders) {
+    const placedAt = fixture.status === 'DRAFT' ? null : new Date('2026-12-01T18:00:00.000Z');
+    const confirmedAt = fixture.status === 'CONFIRMED' ? new Date('2026-12-01T18:05:00.000Z') : null;
+    await prisma.order.upsert({
+      where: { orderNumber: fixture.orderNumber },
+      update: {
+        employee: { connect: { id: demoEmployee.id } },
+        company: { connect: { id: demoCompany.id } },
+        deliveryDate,
+        deliveryTime: demoCompany.defaultDeliveryTime,
+        deliveryAddress: { connect: { id: demoAddress.id } },
+        deliveryAddressSnapshot,
+        packaging: demoCompany.defaultPackaging,
+        status: fixture.status,
+        subtotal: demoLineTotal,
+        total: demoLineTotal,
+        placedAt,
+        confirmedAt,
+        cancelledAt: null,
+        lines: {
+          deleteMany: {},
+          create: [{
+            dish: { connect: { id: demoDish.id } },
+            dishNameSnapshot: demoDish.name,
+            dishSkuSnapshot: demoDish.sku,
+            quantity: demoQuantity,
+            unitPrice: demoUnitPrice,
+            lineTotal: demoLineTotal,
+            combinations: {
+              create: [{
+                quantity: demoQuantity,
+                portionSizeNameSnapshot: 'Standard',
+                unitPrice: demoUnitPrice,
+                totalPrice: demoLineTotal,
+              }],
+            },
+          }],
+        },
+        events: {
+          deleteMany: {},
+          create: [{
+            type: 'SEEDED_DEMO',
+            toStatus: fixture.status,
+            details: { source: 'seed' },
+          }],
+        },
+      },
+      create: {
+        orderNumber: fixture.orderNumber,
+        employee: { connect: { id: demoEmployee.id } },
+        company: { connect: { id: demoCompany.id } },
+        deliveryDate,
+        deliveryTime: demoCompany.defaultDeliveryTime,
+        deliveryAddress: { connect: { id: demoAddress.id } },
+        deliveryAddressSnapshot,
+        packaging: demoCompany.defaultPackaging,
+        status: fixture.status,
+        subtotal: demoLineTotal,
+        total: demoLineTotal,
+        placedAt,
+        confirmedAt,
+        lines: {
+          create: [{
+            dish: { connect: { id: demoDish.id } },
+            dishNameSnapshot: demoDish.name,
+            dishSkuSnapshot: demoDish.sku,
+            quantity: demoQuantity,
+            unitPrice: demoUnitPrice,
+            lineTotal: demoLineTotal,
+            combinations: {
+              create: [{
+                quantity: demoQuantity,
+                portionSizeNameSnapshot: 'Standard',
+                unitPrice: demoUnitPrice,
+                totalPrice: demoLineTotal,
+              }],
+            },
+          }],
+        },
+        events: {
+          create: [{
+            type: 'SEEDED_DEMO',
+            toStatus: fixture.status,
+            details: { source: 'seed' },
+          }],
+        },
+      },
+    });
+  }
+
   console.log('✅ Companies, employees and settings seeded');
 }
 

@@ -28,6 +28,7 @@ type OptionGroup = {
   name: string;
   required: boolean;
   displayOrder: number;
+  active: boolean;
   sizes: Array<{ portionSize: RefItem }>;
   options: Array<{
     optionId: string;
@@ -236,8 +237,9 @@ export default function DishDetailPage() {
               <label className="text-sm">Group name<input className="mt-1 block w-full rounded border px-3 py-2" value={group.name} onChange={(e) => setDish({ ...dish, optionGroups: dish.optionGroups.map((item) => item.id === group.id ? { ...item, name: e.target.value } : item) })} /></label>
               <label className="text-sm">Order<input type="number" min="0" className="mt-1 block w-full rounded border px-3 py-2" value={group.displayOrder} onChange={(e) => setDish({ ...dish, optionGroups: dish.optionGroups.map((item) => item.id === group.id ? { ...item, displayOrder: Number(e.target.value) } : item) })} /></label>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={group.required} onChange={(e) => setDish({ ...dish, optionGroups: dish.optionGroups.map((item) => item.id === group.id ? { ...item, required: e.target.checked } : item) })} /> Required</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={group.active} onChange={(e) => setDish({ ...dish, optionGroups: dish.optionGroups.map((item) => item.id === group.id ? { ...item, active: e.target.checked } : item) })} /> Active</label>
               {canManage && <div className="flex gap-2">
-                <button className="rounded border px-3 py-2" onClick={() => groupAction(group.id, () => api(`/catalogue/option-groups/${group.id}`, patchBody({ name: group.name, required: group.required, displayOrder: group.displayOrder })), 'Option group updated.')}>Save group</button>
+                <button className="rounded border px-3 py-2" onClick={() => groupAction(group.id, () => api(`/catalogue/option-groups/${group.id}`, patchBody({ name: group.name, required: group.required, displayOrder: group.displayOrder, active: group.active })), 'Option group updated.')}>Save group</button>
                 <button className="rounded border border-red-300 px-3 py-2 text-red-800" onClick={() => groupAction(group.id, () => api(`/catalogue/option-groups/${group.id}`, { method: 'DELETE' }), 'Option group deleted.')}>Delete</button>
               </div>}
             </div>
