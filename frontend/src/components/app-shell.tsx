@@ -65,6 +65,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Link href="/catalogue/options">Options</Link>
               <Link href="/reference">Reference data</Link>
             </>}
+            {user?.permissions.includes('pricing.read') && (
+              <Link href="/pricing">Pricing</Link>
+            )}
           </nav>
           <div className="flex items-center gap-3 text-sm">
             <span>{user?.name} · {user?.role}</span>

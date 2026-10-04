@@ -30,6 +30,7 @@ export default function Home() {
     ['Dishes', '/catalogue/dishes', 'Search and manage dishes, tags and option groups.'],
     ['Options', '/catalogue/options', 'Manage options used by dish option groups.'],
     ['Reference data', '/reference', 'Inspect stations, allergens, tags and portion sizes.'],
+    ['Pricing', '/pricing', 'View pricing tiers, overrides and gap coverage.'],
   ];
 
   return (
@@ -61,12 +62,14 @@ export default function Home() {
       <section>
         <h2 className="mb-3 text-xl font-semibold">Test areas</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {sections.map(([title, href, description]) => (
+          {sections
+            .filter(([title]) => title !== 'Pricing' || user?.permissions.includes('pricing.read'))
+            .map(([title, href, description]) => (
             <Link key={href} href={href} className="rounded border bg-white p-5 hover:border-slate-400">
               <h3 className="font-semibold">{title}</h3>
               <p className="mt-2 text-sm text-slate-800">{description}</p>
             </Link>
-          ))}
+            ))}
         </div>
       </section>
 

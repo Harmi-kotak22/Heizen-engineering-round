@@ -98,14 +98,14 @@ export default function OptionsPage() {
             <span className="text-sm">{option.active ? 'Active' : 'Inactive'}</span>
             {can(user, 'catalogue.manage') && <div className="flex gap-2"><button className="rounded border px-3 py-2" onClick={() => save(option)}>Save</button><button className="rounded border px-3 py-2" onClick={() => toggle(option)}>{option.active ? 'Deactivate' : 'Activate'}</button></div>}
           </div>
-          <div className="flex items-center justify-between text-sm">
-            <span>Page {page}{totalPages ? ` of ${totalPages}` : ''}</span>
-            <div className="flex gap-2">
-              <button disabled={page <= 1} className="rounded border bg-white px-3 py-1 disabled:opacity-50" onClick={() => setPage((current) => current - 1)}>Previous</button>
-              <button disabled={page >= totalPages} className="rounded border bg-white px-3 py-1 disabled:opacity-50" onClick={() => setPage((current) => current + 1)}>Next</button>
-            </div>
-          </div>
         ))}
+        <div className="flex items-center justify-between text-sm">
+          <span>Page {page}{totalPages ? ` of ${totalPages}` : ''}</span>
+          <div className="flex gap-2">
+            <button disabled={page <= 1} className="rounded border bg-white px-3 py-1 disabled:opacity-50" onClick={() => setPage((current) => current - 1)}>Previous</button>
+            <button disabled={page >= totalPages} className="rounded border bg-white px-3 py-1 disabled:opacity-50" onClick={() => setPage((current) => current + 1)}>Next</button>
+          </div>
+        </div>
         {!options.length && <p className="rounded border bg-white p-4 text-slate-700">No options found.</p>}
       </div>
     </section>

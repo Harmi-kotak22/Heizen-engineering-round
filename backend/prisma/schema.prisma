@@ -367,24 +367,26 @@ model PricingTier {
 }
 
 model DishPrice {
-  id            String      @id @default(uuid()) @db.Uuid
-  dishId        String      @db.Uuid
-  pricingTierId String      @db.Uuid
-  price         Decimal     @db.Decimal(10, 2)
-  dish          Dish        @relation(fields: [dishId], references: [id], onDelete: Cascade)
-  pricingTier   PricingTier @relation(fields: [pricingTierId], references: [id], onDelete: Cascade)
+  id            String          @id @default(uuid()) @db.Uuid
+  dishId        String          @db.Uuid
+  pricingTierId String          @db.Uuid
+  price         Decimal         @db.Decimal(10, 2)
+  source        PricingPriceSource @default(MANUAL)
+  dish          Dish            @relation(fields: [dishId], references: [id], onDelete: Cascade)
+  pricingTier   PricingTier     @relation(fields: [pricingTierId], references: [id], onDelete: Cascade)
 
   @@unique([dishId, pricingTierId])
   @@index([pricingTierId])
 }
 
 model OptionPrice {
-  id            String      @id @default(uuid()) @db.Uuid
-  optionId      String      @db.Uuid
-  pricingTierId String      @db.Uuid
-  price         Decimal     @db.Decimal(10, 2)
-  option        Option      @relation(fields: [optionId], references: [id], onDelete: Cascade)
-  pricingTier   PricingTier @relation(fields: [pricingTierId], references: [id], onDelete: Cascade)
+  id            String          @id @default(uuid()) @db.Uuid
+  optionId      String          @db.Uuid
+  pricingTierId String          @db.Uuid
+  price         Decimal         @db.Decimal(10, 2)
+  source        PricingPriceSource @default(MANUAL)
+  option        Option          @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  pricingTier   PricingTier     @relation(fields: [pricingTierId], references: [id], onDelete: Cascade)
 
   @@unique([optionId, pricingTierId])
   @@index([pricingTierId])
@@ -625,6 +627,12 @@ enum PricingDerivationType {
   NONE
   COST_FACTOR
   TIER_PERCENTAGE
+}
+
+enum PricingPriceSource {
+  MANUAL
+  DERIVED
+  OVERRIDE
 }
 
 enum OrderStatus {

@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
 dotenv.config({ path: '.env' });
-import { PrismaClient } from '../src/generated/prisma/client.js';
+import { Prisma, PrismaClient } from '../src/generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 const adapter = new PrismaPg({
@@ -18,6 +18,9 @@ async function seedRolesAndPermissions() {
   const permissionDefinitions = [
     ['catalogue.read', 'View catalogue'],
     ['catalogue.manage', 'Manage catalogue'],
+
+    ['pricing.read', 'View pricing'],
+    ['pricing.manage', 'Manage pricing'],
 
     ['companies.read', 'View companies'],
     ['companies.manage', 'Manage companies'],
@@ -340,36 +343,22 @@ async function seedBusinessData() {
 
   console.log('💰 Seeding pricing tiers...');
 
-  const standardTier = await prisma.pricingTier.upsert({
-    where: { name: 'Standard' },
-    update: {
-      isDefault: true,
-      derivationType: 'NONE',
-      derivationSourceTierId: null,
-      derivationFactor: null,
-    },
-    create: {
-      name: 'Standard',
-      isDefault: true,
-      derivationType: 'NONE',
-    },
-  });
-
-  const premiumTier = await prisma.pricingTier.upsert({
-    where: { name: 'Premium' },
-    update: {
-      isDefault: false,
-      derivationType: 'TIER_PERCENTAGE',
-      derivationSourceTierId: standardTier.id,
-      derivationFactor: '0.1000',
-    },
-    create: {
-      name: 'Premium',
-      isDefault: false,
-      derivationType: 'TIER_PERCENTAGE',
-      derivationSourceTierId: standardTier.id,
-      derivationFactor: '0.1000',
-    },
+  const standardTier = await prisma.$transaction(async (tx) => {
+    await tx.pricingTier.updateMany({ data: { isDefault: false } });
+    return tx.pricingTier.upsert({
+      where: { name: 'Standard' },
+      update: {
+        isDefault: true,
+        derivationType: 'NONE',
+        derivationSourceTierId: null,
+        derivationFactor: null,
+      },
+      create: {
+        name: 'Standard',
+        isDefault: true,
+        derivationType: 'NONE',
+      },
+    });
   });
 
   const enterpriseTier = await prisma.pricingTier.upsert({
@@ -377,15 +366,32 @@ async function seedBusinessData() {
     update: {
       isDefault: false,
       derivationType: 'TIER_PERCENTAGE',
-      derivationSourceTierId: premiumTier.id,
-      derivationFactor: '0.0800',
+      derivationSourceTierId: standardTier.id,
+      derivationFactor: '0.1500',
     },
     create: {
       name: 'Enterprise',
       isDefault: false,
       derivationType: 'TIER_PERCENTAGE',
-      derivationSourceTierId: premiumTier.id,
-      derivationFactor: '0.0800',
+      derivationSourceTierId: standardTier.id,
+      derivationFactor: '0.1500',
+    },
+  });
+
+  const partnerTier = await prisma.pricingTier.upsert({
+    where: { name: 'Partner' },
+    update: {
+      isDefault: false,
+      derivationType: 'TIER_PERCENTAGE',
+      derivationSourceTierId: enterpriseTier.id,
+      derivationFactor: '0.0500',
+    },
+    create: {
+      name: 'Partner',
+      isDefault: false,
+      derivationType: 'TIER_PERCENTAGE',
+      derivationSourceTierId: enterpriseTier.id,
+      derivationFactor: '0.0500',
     },
   });
 
@@ -1093,16 +1099,23 @@ async function seedBusinessData() {
 
   console.log('💵 Seeding dish prices...');
 
+  await prisma.dishPrice.deleteMany({
+    where: { pricingTierId: { in: [enterpriseTier.id, partnerTier.id] } },
+  });
+  await prisma.optionPrice.deleteMany({
+    where: { pricingTierId: { in: [enterpriseTier.id, partnerTier.id] } },
+  });
+
   for (const dish of dishes) {
     const dbDish = dishMap[dish.sku];
+    const standardPrice = new Prisma.Decimal(dish.costPrice).mul('1.75').toFixed(2);
 
-    const standardPrice = Number(dish.costPrice) * 1.75;
-    const premiumPrice = Math.ceil(
-      (standardPrice * 1.1) / 0.05,
-    ) * 0.05;
-    const enterprisePrice = Math.ceil(
-      (premiumPrice * 1.08) / 0.05,
-    ) * 0.05;
+    if (['FL-BEV-002', 'FL-DES-002'].includes(dish.sku)) {
+      await prisma.dishPrice.deleteMany({
+        where: { dishId: dbDish.id, pricingTierId: standardTier.id },
+      });
+      continue;
+    }
 
     await prisma.dishPrice.upsert({
       where: {
@@ -1112,52 +1125,29 @@ async function seedBusinessData() {
         },
       },
       update: {
-        price: standardPrice.toFixed(2),
+        price: standardPrice,
+        source: 'MANUAL',
       },
       create: {
         dishId: dbDish.id,
         pricingTierId: standardTier.id,
-        price: standardPrice.toFixed(2),
+        price: standardPrice,
+        source: 'MANUAL',
       },
     });
+  }
 
-    await prisma.dishPrice.upsert({
-      where: {
-        dishId_pricingTierId: {
-          dishId: dbDish.id,
-          pricingTierId: premiumTier.id,
-        },
-      },
-      update: {
-        price: premiumPrice.toFixed(2),
-      },
-      create: {
+  const overrideDish = dishes.find((dish) => !['FL-BEV-002', 'FL-DES-002'].includes(dish.sku));
+  if (overrideDish) {
+    const dbDish = dishMap[overrideDish.sku];
+    await prisma.dishPrice.create({
+      data: {
         dishId: dbDish.id,
-        pricingTierId: premiumTier.id,
-        price: premiumPrice.toFixed(2),
+        pricingTierId: enterpriseTier.id,
+        price: new Prisma.Decimal(dishMap[overrideDish.sku].costPrice).mul('2.25').toFixed(2),
+        source: 'OVERRIDE',
       },
     });
-
-    // Deliberately leave some Enterprise prices missing.
-    // This gives us realistic missing-price cases to test later.
-    if (!['FL-BEV-002', 'FL-DES-002'].includes(dish.sku)) {
-      await prisma.dishPrice.upsert({
-        where: {
-          dishId_pricingTierId: {
-            dishId: dbDish.id,
-            pricingTierId: enterpriseTier.id,
-          },
-        },
-        update: {
-          price: enterprisePrice.toFixed(2),
-        },
-        create: {
-          dishId: dbDish.id,
-          pricingTierId: enterpriseTier.id,
-          price: enterprisePrice.toFixed(2),
-        },
-      });
-    }
   }
 
   // =========================================================
@@ -1168,38 +1158,39 @@ async function seedBusinessData() {
 
   for (const optionData of optionDefinitions) {
     const option = optionMap[optionData.name];
+    const standardPrice = new Prisma.Decimal(optionData.costPrice).mul('1.8').toFixed(2);
 
-    const standardPrice =
-      Math.ceil((Number(optionData.costPrice) * 1.8) / 0.05) * 0.05;
-
-    const premiumPrice =
-      Math.ceil((standardPrice * 1.1) / 0.05) * 0.05;
-
-    const enterprisePrice =
-      Math.ceil((premiumPrice * 1.08) / 0.05) * 0.05;
-
-    for (const [tier, price] of [
-      [standardTier, standardPrice],
-      [premiumTier, premiumPrice],
-      [enterpriseTier, enterprisePrice],
-    ] as const) {
-      await prisma.optionPrice.upsert({
-        where: {
-          optionId_pricingTierId: {
-            optionId: option.id,
-            pricingTierId: tier.id,
-          },
-        },
-        update: {
-          price: price.toFixed(2),
-        },
-        create: {
+    await prisma.optionPrice.upsert({
+      where: {
+        optionId_pricingTierId: {
           optionId: option.id,
-          pricingTierId: tier.id,
-          price: price.toFixed(2),
+          pricingTierId: standardTier.id,
         },
-      });
-    }
+      },
+      update: {
+        price: standardPrice,
+        source: 'MANUAL',
+      },
+      create: {
+        optionId: option.id,
+        pricingTierId: standardTier.id,
+        price: standardPrice,
+        source: 'MANUAL',
+      },
+    });
+  }
+
+  const overrideOptionData = optionDefinitions[0];
+  if (overrideOptionData) {
+    const overrideOption = optionMap[overrideOptionData.name];
+    await prisma.optionPrice.create({
+      data: {
+        optionId: overrideOption.id,
+        pricingTierId: enterpriseTier.id,
+        price: new Prisma.Decimal(overrideOptionData.costPrice).mul('2.1').toFixed(2),
+        source: 'OVERRIDE',
+      },
+    });
   }
 
   console.log('✅ Catalogue and pricing seeded');
@@ -1229,7 +1220,7 @@ async function seedBusinessData() {
     {
       name: 'Vertex Consulting',
       domain: 'vertexconsulting.com',
-      tierId: premiumTier.id,
+      tierId: enterpriseTier.id,
       billingName: 'Daniel Morgan',
       billingEmail: 'billing@vertexconsulting.com',
       billingPhone: '+1 415 555 0168',
