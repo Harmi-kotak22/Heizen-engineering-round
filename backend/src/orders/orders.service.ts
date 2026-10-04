@@ -441,7 +441,7 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
           { order: { deliveryDate: 'asc' } },
           { order: { deliveryTime: 'asc' } },
           { station: { name: 'asc' } },
-          { createdAt: 'asc' },
+          { id: 'asc' },
         ],
         skip: (query.page - 1) * query.limit,
         take: query.limit,
