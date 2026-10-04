@@ -31,6 +31,24 @@
 $ npm install
 ```
 
+## Authentication
+
+Set `JWT_SECRET` in the backend environment before starting the application. Use
+a high-entropy secret and keep it out of source control. Login with
+`POST /auth/login` using an email and password; send the returned access token
+as `Authorization: Bearer <token>` to call `GET /auth/me`.
+
+Protected endpoints can require database-backed permissions with
+`@UseGuards(JwtAuthGuard, PermissionsGuard)` and
+`@RequirePermission('orders.read')`.
+
+Run the auth tests with:
+
+```bash
+npx vitest run --config vitest.config.e2e.ts src/auth/auth.e2e-spec.ts
+npx vitest run src/auth/permissions.guard.spec.ts
+```
+
 ## Compile and run the project
 
 ```bash

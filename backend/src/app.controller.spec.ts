@@ -8,15 +8,30 @@ describe('AppController', () => {
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
-      providers: [AppService],
+      providers: [
+        {
+          provide: AppService,
+          useValue: {
+            getHealth: () => ({
+              status: 'success',
+              message: 'NestJS is running!',
+              database: 'Connected to Neon PostgreSQL',
+              timestamp: '2025-01-01T00:00:00.000Z',
+            }),
+          },
+        },
+      ],
     }).compile();
 
     appController = app.get<AppController>(AppController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+  describe('health', () => {
+    it('should return health status', () => {
+      expect(appController.getHealth()).toMatchObject({
+        status: 'success',
+        message: 'NestJS is running!',
+      });
     });
   });
 });
