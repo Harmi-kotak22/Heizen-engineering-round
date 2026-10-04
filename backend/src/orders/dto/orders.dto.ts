@@ -216,3 +216,32 @@ export class KitchenHolidayDto {
   @IsNotEmpty()
   name!: string;
 }
+
+export class KitchenBoardQueryDto {
+  @IsOptional()
+  @IsDateString()
+  deliveryDate?: string;
+
+  @IsOptional()
+  @IsUUID()
+  stationId?: string;
+
+  @IsOptional()
+  @IsIn(['PENDING', 'STARTED', 'DONE'])
+  status?: string;
+
+  @IsOptional()
+  @IsUUID()
+  orderId?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit = 50;
+}

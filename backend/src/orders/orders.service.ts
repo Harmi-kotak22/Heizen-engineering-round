@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import {
   AdminOrderOverrideDto,
   CreateOrderDto,
+  KitchenBoardQueryDto,
   KitchenHolidayDto,
   KitchenSettingsDto,
   OrderListQueryDto,
@@ -261,10 +262,10 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
   }
 
   async confirm(id: string, actorId: string) {
-    await this.getOrder(id);
-    return this.transition(id, 'PLACED', 'CONFIRMED', 'CONFIRMED', actorId, {
-      confirmedAt: new Date(),
-    });
+    return this.prisma.$transaction(async (tx) => {
+      await this.confirmPlacedOrder(tx, id, actorId, new Date(), 'CONFIRMED');
+      return tx.order.findUniqueOrThrow({ where: { id }, include: orderDetail });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }
 
   async reject(id: string, actorId: string, reason?: string) {
@@ -301,13 +302,23 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       ? await this.resolveAddress(employee, employee.company, dto.deliveryAddressId, true)
       : await this.getOrderAddress(order.deliveryAddressId, employee.companyId);
     const updated = await this.prisma.$transaction(async (tx) => {
+      const deliveryTime = dto.deliveryTime ?? order.deliveryTime;
+      const planning = dto.deliveryTime === undefined
+        ? {}
+        : await this.calculatePlanningTimestamps(
+            tx,
+            order.deliveryDate,
+            deliveryTime,
+            employee.company.deliveryLeadMinutes,
+          );
       const result = await tx.order.updateMany({
         where: { id, status: 'CONFIRMED' },
         data: {
-          deliveryTime: dto.deliveryTime ?? order.deliveryTime,
+          deliveryTime,
           deliveryAddressId: address.id,
           deliveryAddressSnapshot: this.addressSnapshot(address),
           packaging: dto.packaging ?? order.packaging,
+          ...planning,
         },
       });
       if (!result.count) throw new ConflictException('Order status changed during override');
@@ -369,6 +380,251 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
 
   async getKitchenSettings() {
     return this.prisma.kitchenSetting.findUnique({ where: { id: 1 } });
+  }
+
+  async listKitchenStations() {
+    return this.prisma.station.findMany({
+      where: { active: true },
+      select: { id: true, name: true, active: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async listKitchenBoard(query: KitchenBoardQueryDto) {
+    const where: Prisma.KitchenPrepUnitWhereInput = {
+      order: {
+        status: 'CONFIRMED',
+        ...(query.deliveryDate
+          ? { deliveryDate: this.parseDateOnly(query.deliveryDate) }
+          : {}),
+        ...(query.orderId ? { id: query.orderId } : {}),
+      },
+      ...(query.stationId ? { stationId: query.stationId } : {}),
+      ...(query.status
+        ? { status: query.status as Prisma.EnumKitchenPrepStatusFilter['equals'] }
+        : {}),
+    };
+    const [data, total] = await Promise.all([
+      this.prisma.kitchenPrepUnit.findMany({
+        where,
+        include: {
+          station: { select: { id: true, name: true } },
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              deliveryDate: true,
+              deliveryTime: true,
+              status: true,
+              kitchenReadyAt: true,
+              plannedKitchenReadyAt: true,
+              plannedDispatchReadyAt: true,
+              company: { select: { id: true, name: true } },
+            },
+          },
+          orderCombination: {
+            select: {
+              quantity: true,
+              portionSizeNameSnapshot: true,
+              orderLine: { select: { dishNameSnapshot: true, dishSkuSnapshot: true } },
+              options: {
+                select: {
+                  optionGroupNameSnapshot: true,
+                  optionNameSnapshot: true,
+                },
+                orderBy: [{ optionGroupNameSnapshot: 'asc' }, { optionNameSnapshot: 'asc' }],
+              },
+            },
+          },
+        },
+        orderBy: [
+          { order: { deliveryDate: 'asc' } },
+          { order: { deliveryTime: 'asc' } },
+          { station: { name: 'asc' } },
+          { createdAt: 'asc' },
+        ],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      }),
+      this.prisma.kitchenPrepUnit.count({ where }),
+    ]);
+    const now = new Date();
+    return {
+      data: data.map((unit) => ({
+        id: unit.id,
+        orderId: unit.orderId,
+        orderNumber: unit.order.orderNumber,
+        deliveryDate: unit.order.deliveryDate,
+        deliveryTime: unit.order.deliveryTime,
+        company: unit.order.company,
+        dish: unit.orderCombination.orderLine.dishNameSnapshot,
+        dishSku: unit.orderCombination.orderLine.dishSkuSnapshot,
+        quantity: unit.orderCombination.quantity,
+        options: unit.orderCombination.options,
+        portionSize: unit.orderCombination.portionSizeNameSnapshot,
+        station: unit.station,
+        status: unit.status,
+        startedAt: unit.startedAt,
+        doneAt: unit.completedAt,
+        plannedKitchenReadyAt: unit.order.plannedKitchenReadyAt,
+        plannedDispatchReadyAt: unit.order.plannedDispatchReadyAt,
+        atRisk: Boolean(
+          !unit.order.kitchenReadyAt
+          && unit.order.plannedKitchenReadyAt
+          && now > unit.order.plannedKitchenReadyAt,
+        ),
+        late: Boolean(
+          !unit.order.kitchenReadyAt
+          && unit.order.plannedDispatchReadyAt
+          && now > unit.order.plannedDispatchReadyAt,
+        ),
+      })),
+      pagination: {
+        page: query.page,
+        limit: query.limit,
+        total,
+        totalPages: Math.ceil(total / query.limit),
+      },
+    };
+  }
+
+  async startPrepUnit(id: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.kitchenPrepUnit.findUnique({
+        where: { id },
+        select: { id: true, startedAt: true, order: { select: { status: true } } },
+      });
+      if (!existing) throw new NotFoundException('Kitchen prep unit not found');
+      if (existing.order.status !== 'CONFIRMED') {
+        throw new ConflictException('Only confirmed orders can be prepared');
+      }
+      const updated = await tx.kitchenPrepUnit.updateMany({
+        where: { id, status: 'PENDING', order: { status: 'CONFIRMED' } },
+        data: { status: 'STARTED', startedAt: existing.startedAt ?? now },
+      });
+      if (!updated.count) {
+        throw new ConflictException('Prep unit is no longer pending');
+      }
+      return tx.kitchenPrepUnit.findUniqueOrThrow({
+        where: { id },
+        include: { station: true },
+      });
+    });
+  }
+
+  async completePrepUnit(id: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.kitchenPrepUnit.updateMany({
+        where: { id, status: 'STARTED', order: { status: 'CONFIRMED' } },
+        data: { status: 'DONE', completedAt: now },
+      });
+      if (!updated.count) {
+        const existing = await tx.kitchenPrepUnit.findUnique({
+          where: { id },
+          select: { id: true, status: true, order: { select: { status: true } } },
+        });
+        if (!existing) throw new NotFoundException('Kitchen prep unit not found');
+        if (existing.order.status !== 'CONFIRMED') {
+          throw new ConflictException('Only confirmed orders can be prepared');
+        }
+        throw new ConflictException('Only an in-progress prep unit can be completed');
+      }
+      const { orderId } = await tx.kitchenPrepUnit.findUniqueOrThrow({
+        where: { id },
+        select: { orderId: true },
+      });
+      return {
+        orderId,
+        unit: await tx.kitchenPrepUnit.findUniqueOrThrow({
+          where: { id },
+          include: { station: true },
+        }),
+      };
+    }).then(async ({ orderId, unit }) => {
+      await this.prisma.$transaction((tx) => this.markKitchenReadyIfComplete(tx, orderId, now));
+      return unit;
+    });
+  }
+
+  async forceCompletePrepUnit(id: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const unit = await tx.kitchenPrepUnit.findUnique({
+        where: { id },
+        select: { id: true, orderId: true, startedAt: true, order: { select: { status: true } } },
+      });
+      if (!unit) throw new NotFoundException('Kitchen prep unit not found');
+      if (unit.order.status !== 'CONFIRMED') {
+        throw new ConflictException('Only confirmed orders can be force-completed');
+      }
+      const changed = await tx.kitchenPrepUnit.updateMany({
+        where: { id, status: { not: 'DONE' }, order: { status: 'CONFIRMED' } },
+        data: {
+          status: 'DONE',
+          startedAt: unit.startedAt ?? now,
+          completedAt: now,
+        },
+      });
+      if (!changed.count) throw new ConflictException('Prep unit is already done');
+      await tx.order.updateMany({
+        where: { id: unit.orderId, kitchenForceCompletedAt: null },
+        data: { kitchenForceCompletedAt: now },
+      });
+      return tx.kitchenPrepUnit.findUniqueOrThrow({ where: { id }, include: { station: true } });
+    }).then(async (unit) => {
+      await this.prisma.$transaction((tx) =>
+        this.markKitchenReadyIfComplete(tx, unit.orderId, now));
+      return unit;
+    });
+  }
+
+  async forceCompleteKitchenOrder(id: string) {
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      const order = await tx.order.findUnique({
+        where: { id },
+        select: { id: true, status: true },
+      });
+      if (!order) throw new NotFoundException('Order not found');
+      if (order.status !== 'CONFIRMED') {
+        throw new ConflictException('Only confirmed orders can be force-completed');
+      }
+      const pending = await tx.kitchenPrepUnit.findMany({
+        where: { orderId: id, status: { not: 'DONE' } },
+        select: { id: true, startedAt: true },
+      });
+      if (!pending.length) {
+        const existingUnitCount = await tx.kitchenPrepUnit.count({ where: { orderId: id } });
+        if (!existingUnitCount) {
+          throw new ConflictException('Confirmed order has no kitchen prep units');
+        }
+        throw new ConflictException('All prep units for this order are already done');
+      }
+      for (const unit of pending) {
+        await tx.kitchenPrepUnit.updateMany({
+          where: { id: unit.id, status: { not: 'DONE' } },
+          data: {
+            status: 'DONE',
+            startedAt: unit.startedAt ?? now,
+            completedAt: now,
+          },
+        });
+      }
+      await tx.order.updateMany({
+        where: { id, status: 'CONFIRMED', kitchenForceCompletedAt: null },
+        data: { kitchenForceCompletedAt: now },
+      });
+      return tx.order.findUniqueOrThrow({
+        where: { id },
+        include: { prepUnits: { include: { station: true } } },
+      });
+    }).then(async (order) => {
+      await this.prisma.$transaction((tx) =>
+        this.markKitchenReadyIfComplete(tx, id, now));
+      return order;
+    });
   }
 
   async listOrderEmployees() {
@@ -481,22 +737,23 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
     let confirmed = 0;
     let cancelled = 0;
     for (const order of eligible) {
-      const toStatus = order.status === 'PLACED' ? 'CONFIRMED' : 'CANCELLED';
       const changed = await this.prisma.$transaction(async (tx) => {
+        if (order.status === 'PLACED') {
+          await this.confirmPlacedOrder(tx, order.id, actorId, now, 'CUTOFF_CONFIRMED');
+          return 1;
+        }
         const update = await tx.order.updateMany({
           where: { id: order.id, status: order.status },
-          data: order.status === 'PLACED'
-            ? { status: 'CONFIRMED', confirmedAt: now }
-            : { status: 'CANCELLED', cancelledAt: now },
+          data: { status: 'CANCELLED', cancelledAt: now },
         });
         if (!update.count) return 0;
         await tx.orderEvent.create({
           data: {
             orderId: order.id,
             actorId,
-            type: order.status === 'PLACED' ? 'CUTOFF_CONFIRMED' : 'CUTOFF_CANCELLED',
+            type: 'CUTOFF_CANCELLED',
             fromStatus: order.status,
-            toStatus,
+            toStatus: 'CANCELLED',
           },
         });
         return 1;
@@ -818,6 +1075,158 @@ export class OrdersService implements OnModuleInit, OnModuleDestroy {
       });
       return tx.order.findUniqueOrThrow({ where: { id }, include: orderDetail });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  }
+
+  private async confirmPlacedOrder(
+    tx: Prisma.TransactionClient,
+    id: string,
+    actorId: string | null,
+    now: Date,
+    eventType: 'CONFIRMED' | 'CUTOFF_CONFIRMED',
+  ) {
+    const order = await tx.order.findUnique({
+      where: { id },
+      include: {
+        company: { select: { deliveryLeadMinutes: true } },
+        lines: {
+          include: {
+            combinations: {
+              include: {
+                orderLine: {
+                  select: {
+                    dish: {
+                      select: {
+                        station: { select: { id: true, name: true, active: true } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.status !== 'PLACED') {
+      throw new ConflictException('Only placed orders can be confirmed');
+    }
+
+    const combinations = order.lines.flatMap((line) => line.combinations);
+    if (!combinations.length) {
+      throw new ConflictException('Order has no preparation combinations to confirm');
+    }
+
+    const stationIds = [...new Set(combinations.flatMap((combination) => {
+      const station = combination.orderLine.dish?.station;
+      return station?.active ? [station.id] : [];
+    }))];
+    const activeStations = await tx.station.findMany({
+      where: { id: { in: stationIds }, active: true },
+      select: { id: true },
+    });
+    const validStationIds = new Set(activeStations.map(({ id: stationId }) => stationId));
+    const needsUnassigned = combinations.some((combination) => {
+      const station = combination.orderLine.dish?.station;
+      return !station?.active || !validStationIds.has(station.id);
+    });
+    let unassignedStationId: string | undefined;
+    if (needsUnassigned) {
+      const unassigned = await tx.station.findUnique({
+        where: { name: 'Unassigned' },
+        select: { id: true, active: true },
+      });
+      if (!unassigned?.active) {
+        throw new ConflictException('The active Unassigned station is required for kitchen routing');
+      }
+      unassignedStationId = unassigned.id;
+    }
+
+    const planning = await this.calculatePlanningTimestamps(
+      tx,
+      order.deliveryDate,
+      order.deliveryTime,
+      order.company.deliveryLeadMinutes,
+    );
+
+    const changed = await tx.order.updateMany({
+      where: { id, status: 'PLACED' },
+      data: {
+        status: 'CONFIRMED',
+        confirmedAt: now,
+        ...planning,
+      },
+    });
+    if (!changed.count) throw new ConflictException('Order status changed; reload and retry');
+
+    await tx.kitchenPrepUnit.createMany({
+      data: combinations.map((combination) => {
+        const dishStation = combination.orderLine.dish?.station;
+        const stationId = dishStation?.active && validStationIds.has(dishStation.id)
+          ? dishStation.id
+          : unassignedStationId;
+        if (!stationId) {
+          throw new ConflictException('Unable to route a kitchen prep unit to a valid station');
+        }
+        return {
+          orderId: id,
+          orderCombinationId: combination.id,
+          stationId,
+          status: 'PENDING' as const,
+        };
+      }),
+      skipDuplicates: true,
+    });
+    await tx.orderEvent.create({
+      data: {
+        orderId: id,
+        actorId,
+        type: eventType,
+        fromStatus: 'PLACED',
+        toStatus: 'CONFIRMED',
+      },
+    });
+    return order;
+  }
+
+  private async calculatePlanningTimestamps(
+    tx: Prisma.TransactionClient,
+    deliveryDate: Date,
+    deliveryTime: string,
+    leaveBeforeMinutes: number,
+  ) {
+    const setting = await tx.kitchenSetting.findUnique({ where: { id: 1 } });
+    const [hour, minute] = deliveryTime.split(':').map(Number);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)
+      || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      throw new ConflictException('Order delivery time is invalid for kitchen planning');
+    }
+    const deliveryAt = this.zonedDateToUtc(
+      { ...this.dateOnlyParts(deliveryDate), hour, minute },
+      setting?.timezone ?? 'UTC',
+    );
+    const plannedDispatchReadyAt = new Date(deliveryAt.getTime() - leaveBeforeMinutes * 60_000);
+    return {
+      plannedDispatchReadyAt,
+      plannedKitchenReadyAt: new Date(plannedDispatchReadyAt.getTime() - 30 * 60_000),
+    };
+  }
+
+  private async markKitchenReadyIfComplete(
+    tx: Prisma.TransactionClient,
+    orderId: string,
+    completedAt: Date,
+  ) {
+    const [prepUnitCount, incompleteCount] = await Promise.all([
+      tx.kitchenPrepUnit.count({ where: { orderId } }),
+      tx.kitchenPrepUnit.count({ where: { orderId, status: { not: 'DONE' } } }),
+    ]);
+    if (prepUnitCount > 0 && incompleteCount === 0) {
+      await tx.order.updateMany({
+        where: { id: orderId, status: 'CONFIRMED', kitchenReadyAt: null },
+        data: { kitchenReadyAt: completedAt },
+      });
+    }
   }
 
   private async getOrder(id: string) {

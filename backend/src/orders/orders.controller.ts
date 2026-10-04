@@ -21,6 +21,7 @@ import { PermissionsGuard } from '../auth/permissions.guard.js';
 import {
   AdminOrderOverrideDto,
   CreateOrderDto,
+  KitchenBoardQueryDto,
   KitchenHolidayDto,
   KitchenSettingsDto,
   OrderListQueryDto,
@@ -136,6 +137,42 @@ export class OrdersController {
   @RequirePermission('kitchen.read')
   getKitchenSettings() {
     return this.orders.getKitchenSettings();
+  }
+
+  @Get('kitchen/stations')
+  @RequirePermission('kitchen.read')
+  listKitchenStations() {
+    return this.orders.listKitchenStations();
+  }
+
+  @Get('kitchen/board')
+  @RequirePermission('kitchen.read')
+  listKitchenBoard(@Query() query: KitchenBoardQueryDto) {
+    return this.orders.listKitchenBoard(query);
+  }
+
+  @Post('kitchen/prep-units/:id/start')
+  @RequirePermission('kitchen.manage')
+  startPrepUnit(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.orders.startPrepUnit(id);
+  }
+
+  @Post('kitchen/prep-units/:id/done')
+  @RequirePermission('kitchen.manage')
+  completePrepUnit(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.orders.completePrepUnit(id);
+  }
+
+  @Post('kitchen/prep-units/:id/force-complete')
+  @RequirePermission('kitchen.forceComplete')
+  forceCompletePrepUnit(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.orders.forceCompletePrepUnit(id);
+  }
+
+  @Post('kitchen/orders/:id/force-complete')
+  @RequirePermission('kitchen.forceComplete')
+  forceCompleteKitchenOrder(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.orders.forceCompleteKitchenOrder(id);
   }
 
   @Patch('kitchen/settings')

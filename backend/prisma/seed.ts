@@ -34,6 +34,7 @@ async function seedRolesAndPermissions() {
 
     ['kitchen.read', 'View kitchen operations'],
     ['kitchen.manage', 'Manage kitchen operations'],
+    ['kitchen.forceComplete', 'Force-complete kitchen preparation'],
 
     ['dispatch.read', 'View dispatch operations'],
     ['dispatch.manage', 'Manage dispatch operations'],
@@ -1922,6 +1923,339 @@ async function seedBusinessData() {
         },
       },
     });
+  }
+
+  const mixedDeliveryDate = new Date('2026-12-29T00:00:00.000Z');
+  const hotDish = dishMap['FL-BWL-001'];
+  const coldDish = dishMap['FL-SAL-002'];
+  const hotDishPrice = await prisma.dishPrice.findUniqueOrThrow({
+    where: {
+      dishId_pricingTierId: { dishId: hotDish.id, pricingTierId: standardTier.id },
+    },
+  });
+  const coldDishPrice = await prisma.dishPrice.findUniqueOrThrow({
+    where: {
+      dishId_pricingTierId: { dishId: coldDish.id, pricingTierId: standardTier.id },
+    },
+  });
+  const quinoaPrice = await prisma.optionPrice.findUniqueOrThrow({
+    where: {
+      optionId_pricingTierId: {
+        optionId: optionMap['Quinoa'].id,
+        pricingTierId: standardTier.id,
+      },
+    },
+  });
+  const paneerPrice = await prisma.optionPrice.findUniqueOrThrow({
+    where: {
+      optionId_pricingTierId: {
+        optionId: optionMap['Paneer'].id,
+        pricingTierId: standardTier.id,
+      },
+    },
+  });
+  const greensPrice = await prisma.optionPrice.findUniqueOrThrow({
+    where: {
+      optionId_pricingTierId: {
+        optionId: optionMap['Mixed Greens'].id,
+        pricingTierId: standardTier.id,
+      },
+    },
+  });
+  const hotUnitOne = new Prisma.Decimal(hotDishPrice.price).add(quinoaPrice.price);
+  const hotUnitTwo = new Prisma.Decimal(hotDishPrice.price).add('1.00').add(paneerPrice.price);
+  const coldUnit = new Prisma.Decimal(coldDishPrice.price).add(greensPrice.price);
+  const hotLineTotal = hotUnitOne.mul(2).add(hotUnitTwo);
+  const coldLineTotal = coldUnit;
+  const mixedOrderTotal = hotLineTotal.add(coldLineTotal).add('3.50');
+  const mixedOrder = await prisma.order.upsert({
+    where: { orderNumber: 'DEMO-KITCHEN-MIXED-001' },
+    update: {
+      employee: { connect: { id: demoEmployee.id } },
+      company: { connect: { id: demoCompany.id } },
+      deliveryDate: mixedDeliveryDate,
+      deliveryTime: '12:00',
+      deliveryAddress: { connect: { id: demoAddress.id } },
+      deliveryAddressSnapshot,
+      packaging: demoCompany.defaultPackaging,
+      status: 'CONFIRMED',
+      confirmedAt: new Date('2026-12-01T18:05:00.000Z'),
+      subtotal: mixedOrderTotal,
+      total: mixedOrderTotal,
+      plannedDispatchReadyAt: new Date('2026-12-29T19:00:00.000Z'),
+      plannedKitchenReadyAt: new Date('2026-12-29T18:30:00.000Z'),
+      kitchenReadyAt: null,
+      kitchenForceCompletedAt: null,
+      lines: {
+        deleteMany: {},
+        create: [
+          {
+            dish: { connect: { id: hotDish.id } },
+            dishNameSnapshot: hotDish.name,
+            dishSkuSnapshot: hotDish.sku,
+            quantity: 3,
+            unitPrice: new Prisma.Decimal(hotDishPrice.price),
+            lineTotal: hotLineTotal,
+            combinations: {
+              create: [
+                {
+                  quantity: 2,
+                  portionSizeNameSnapshot: 'Regular',
+                  unitPrice: hotUnitOne,
+                  totalPrice: hotUnitOne.mul(2),
+                  options: {
+                    create: [{
+                      option: { connect: { id: optionMap['Quinoa'].id } },
+                      optionNameSnapshot: 'Quinoa',
+                      optionGroupNameSnapshot: 'Base',
+                      price: quinoaPrice.price,
+                    }],
+                  },
+                },
+                {
+                  quantity: 1,
+                  portionSizeNameSnapshot: 'Large',
+                  unitPrice: hotUnitTwo,
+                  totalPrice: hotUnitTwo,
+                  options: {
+                    create: [{
+                      option: { connect: { id: optionMap['Paneer'].id } },
+                      optionNameSnapshot: 'Paneer',
+                      optionGroupNameSnapshot: 'Protein',
+                      price: paneerPrice.price,
+                    }],
+                  },
+                },
+              ],
+            },
+          },
+          {
+            dish: { connect: { id: coldDish.id } },
+            dishNameSnapshot: coldDish.name,
+            dishSkuSnapshot: coldDish.sku,
+            quantity: 1,
+            unitPrice: new Prisma.Decimal(coldDishPrice.price),
+            lineTotal: coldLineTotal,
+            combinations: {
+              create: [{
+                quantity: 1,
+                portionSizeNameSnapshot: 'Regular',
+                unitPrice: coldUnit,
+                totalPrice: coldUnit,
+                options: {
+                  create: [{
+                    option: { connect: { id: optionMap['Mixed Greens'].id } },
+                    optionNameSnapshot: 'Mixed Greens',
+                    optionGroupNameSnapshot: 'Base',
+                    price: greensPrice.price,
+                  }],
+                },
+              }],
+            },
+          },
+          {
+            dishNameSnapshot: 'Seasonal special (station routing demo)',
+            dishSkuSnapshot: 'DEMO-UNASSIGNED',
+            quantity: 1,
+            unitPrice: new Prisma.Decimal('3.50'),
+            lineTotal: new Prisma.Decimal('3.50'),
+            combinations: {
+              create: [{
+                quantity: 1,
+                portionSizeNameSnapshot: 'Standard',
+                unitPrice: new Prisma.Decimal('3.50'),
+                totalPrice: new Prisma.Decimal('3.50'),
+              }],
+            },
+          },
+        ],
+      },
+      events: {
+        deleteMany: {},
+        create: [{
+          type: 'SEEDED_DEMO',
+          toStatus: 'CONFIRMED',
+          details: { source: 'seed', fixture: 'kitchen-board' },
+        }],
+      },
+    },
+    create: {
+      orderNumber: 'DEMO-KITCHEN-MIXED-001',
+      employee: { connect: { id: demoEmployee.id } },
+      company: { connect: { id: demoCompany.id } },
+      deliveryDate: mixedDeliveryDate,
+      deliveryTime: '12:00',
+      deliveryAddress: { connect: { id: demoAddress.id } },
+      deliveryAddressSnapshot,
+      packaging: demoCompany.defaultPackaging,
+      status: 'CONFIRMED',
+      confirmedAt: new Date('2026-12-01T18:05:00.000Z'),
+      subtotal: mixedOrderTotal,
+      total: mixedOrderTotal,
+      plannedDispatchReadyAt: new Date('2026-12-29T19:00:00.000Z'),
+      plannedKitchenReadyAt: new Date('2026-12-29T18:30:00.000Z'),
+      lines: {
+        create: [
+          {
+            dish: { connect: { id: hotDish.id } },
+            dishNameSnapshot: hotDish.name,
+            dishSkuSnapshot: hotDish.sku,
+            quantity: 3,
+            unitPrice: new Prisma.Decimal(hotDishPrice.price),
+            lineTotal: hotLineTotal,
+            combinations: {
+              create: [
+                {
+                  quantity: 2,
+                  portionSizeNameSnapshot: 'Regular',
+                  unitPrice: hotUnitOne,
+                  totalPrice: hotUnitOne.mul(2),
+                  options: {
+                    create: [{
+                      option: { connect: { id: optionMap['Quinoa'].id } },
+                      optionNameSnapshot: 'Quinoa',
+                      optionGroupNameSnapshot: 'Base',
+                      price: quinoaPrice.price,
+                    }],
+                  },
+                },
+                {
+                  quantity: 1,
+                  portionSizeNameSnapshot: 'Large',
+                  unitPrice: hotUnitTwo,
+                  totalPrice: hotUnitTwo,
+                  options: {
+                    create: [{
+                      option: { connect: { id: optionMap['Paneer'].id } },
+                      optionNameSnapshot: 'Paneer',
+                      optionGroupNameSnapshot: 'Protein',
+                      price: paneerPrice.price,
+                    }],
+                  },
+                },
+              ],
+            },
+          },
+          {
+            dish: { connect: { id: coldDish.id } },
+            dishNameSnapshot: coldDish.name,
+            dishSkuSnapshot: coldDish.sku,
+            quantity: 1,
+            unitPrice: new Prisma.Decimal(coldDishPrice.price),
+            lineTotal: coldLineTotal,
+            combinations: {
+              create: [{
+                quantity: 1,
+                portionSizeNameSnapshot: 'Regular',
+                unitPrice: coldUnit,
+                totalPrice: coldUnit,
+                options: {
+                  create: [{
+                    option: { connect: { id: optionMap['Mixed Greens'].id } },
+                    optionNameSnapshot: 'Mixed Greens',
+                    optionGroupNameSnapshot: 'Base',
+                    price: greensPrice.price,
+                  }],
+                },
+              }],
+            },
+          },
+          {
+            dishNameSnapshot: 'Seasonal special (station routing demo)',
+            dishSkuSnapshot: 'DEMO-UNASSIGNED',
+            quantity: 1,
+            unitPrice: new Prisma.Decimal('3.50'),
+            lineTotal: new Prisma.Decimal('3.50'),
+            combinations: {
+              create: [{
+                quantity: 1,
+                portionSizeNameSnapshot: 'Standard',
+                unitPrice: new Prisma.Decimal('3.50'),
+                totalPrice: new Prisma.Decimal('3.50'),
+              }],
+            },
+          },
+        ],
+      },
+      events: {
+        create: [{
+          type: 'SEEDED_DEMO',
+          toStatus: 'CONFIRMED',
+          details: { source: 'seed', fixture: 'kitchen-board' },
+        }],
+      },
+    },
+  });
+
+  const seededPrepUnits = await prisma.orderCombination.findMany({
+    where: { orderLine: { orderId: mixedOrder.id } },
+    include: {
+      prepUnits: true,
+      options: { select: { optionNameSnapshot: true } },
+      orderLine: {
+        select: {
+          dishNameSnapshot: true,
+          dish: { select: { station: { select: { id: true, active: true } } } },
+        },
+      },
+    },
+  });
+  const unassignedStation = await prisma.station.findUniqueOrThrow({
+    where: { name: 'Unassigned' },
+  });
+  for (const [index, combination] of seededPrepUnits.entries()) {
+    const dishStation = combination.orderLine.dish?.station;
+    const stationId = dishStation?.active ? dishStation.id : unassignedStation.id;
+    const selectedNames = combination.options.map(({ optionNameSnapshot }) => optionNameSnapshot);
+    const initialState = selectedNames.includes('Quinoa')
+      ? 'STARTED'
+      : selectedNames.includes('Paneer')
+        ? 'DONE'
+        : index === 0
+          ? 'STARTED'
+          : 'PENDING';
+    const timestamps = initialState === 'STARTED'
+      ? { startedAt: new Date('2026-12-29T17:45:00.000Z'), completedAt: null }
+      : initialState === 'DONE'
+        ? { startedAt: new Date('2026-12-29T17:30:00.000Z'), completedAt: new Date('2026-12-29T17:50:00.000Z') }
+        : { startedAt: null, completedAt: null };
+    await prisma.kitchenPrepUnit.upsert({
+      where: { orderCombinationId: combination.id },
+      update: { stationId, status: initialState, ...timestamps },
+      create: {
+        orderId: mixedOrder.id,
+        orderCombinationId: combination.id,
+        stationId,
+        status: initialState,
+        ...timestamps,
+      },
+    });
+  }
+
+  const simpleConfirmedOrder = await prisma.order.findUniqueOrThrow({
+    where: { orderNumber: 'DEMO-CONFIRMED-001' },
+    include: { lines: { include: { combinations: true } } },
+  });
+  for (const line of simpleConfirmedOrder.lines) {
+    const dishStation = line.dishId
+      ? await prisma.dish.findUnique({
+          where: { id: line.dishId },
+          select: { stationId: true, station: { select: { active: true } } },
+        })
+      : null;
+    const stationId = dishStation?.station.active ? dishStation.stationId : unassignedStation.id;
+    for (const combination of line.combinations) {
+      await prisma.kitchenPrepUnit.upsert({
+        where: { orderCombinationId: combination.id },
+        update: { stationId, status: 'PENDING', startedAt: null, completedAt: null },
+        create: {
+          orderId: simpleConfirmedOrder.id,
+          orderCombinationId: combination.id,
+          stationId,
+          status: 'PENDING',
+        },
+      });
+    }
   }
 
   console.log('✅ Companies, employees and settings seeded');

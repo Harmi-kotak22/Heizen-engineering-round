@@ -514,6 +514,7 @@ model KitchenPrepUnit {
   @@index([orderId])
   @@index([stationId, status])
   @@index([orderCombinationId])
+  @@unique([orderCombinationId])
 }
 
 model Drop {
