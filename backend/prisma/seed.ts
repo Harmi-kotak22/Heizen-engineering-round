@@ -1272,6 +1272,9 @@ async function seedBusinessData() {
           defaultPackaging: companyData.packaging,
           driverInstructions: companyData.instructions,
           defaultDriverId: driver.id,
+          active: true,
+          ...(companyData.name === 'Vertex Consulting' ? { saturdayEnabled: true } : {}),
+          ...(companyData.name === 'BluePeak Systems' ? { deliveryLeadMinutes: 90 } : {}),
         },
       });
     } else {
@@ -1287,6 +1290,9 @@ async function seedBusinessData() {
           defaultPackaging: companyData.packaging,
           driverInstructions: companyData.instructions,
           defaultDriverId: driver.id,
+          active: true,
+          ...(companyData.name === 'Vertex Consulting' ? { saturdayEnabled: true } : {}),
+          ...(companyData.name === 'BluePeak Systems' ? { deliveryLeadMinutes: 90 } : {}),
         },
       });
     }
@@ -1555,6 +1561,31 @@ async function seedBusinessData() {
       where: { id: company.id },
       data: {
         ownerEmployeeId: employee.id,
+      },
+    });
+  }
+
+  const companyHolidayDefinitions = [
+    { company: 'Northstar Finance', date: new Date('2026-11-26T00:00:00.000Z'), name: 'Thanksgiving closure' },
+    { company: 'Vertex Consulting', date: new Date('2026-12-25T00:00:00.000Z'), name: 'Winter holiday' },
+    { company: 'BluePeak Systems', date: new Date('2026-11-11T00:00:00.000Z'), name: 'Company planning day' },
+    { company: 'Harbor Health', date: new Date('2026-12-25T00:00:00.000Z'), name: 'Christmas closure' },
+  ];
+
+  for (const holiday of companyHolidayDefinitions) {
+    const company = companyMap[holiday.company];
+    await prisma.companyHoliday.upsert({
+      where: {
+        companyId_date: {
+          companyId: company.id,
+          date: holiday.date,
+        },
+      },
+      update: { name: holiday.name },
+      create: {
+        companyId: company.id,
+        date: holiday.date,
+        name: holiday.name,
       },
     });
   }

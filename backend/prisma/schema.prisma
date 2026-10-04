@@ -51,6 +51,7 @@ model RolePermission {
 model Company {
   id                  String                      @id @default(uuid()) @db.Uuid
   name                String
+  active              Boolean                     @default(true)
   ownerEmployeeId     String?                     @db.Uuid
   billingContactName  String?
   billingContactEmail String?
@@ -124,6 +125,7 @@ model Employee {
   name                  String
   email                 String
   phone                 String?
+  active                Boolean                     @default(true)
   canChooseAddress      Boolean                     @default(false)
   canChangeDeliveryTime Boolean                     @default(false)
   canChangePackaging    Boolean                     @default(false)

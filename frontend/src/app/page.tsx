@@ -31,6 +31,8 @@ export default function Home() {
     ['Options', '/catalogue/options', 'Manage options used by dish option groups.'],
     ['Reference data', '/reference', 'Inspect stations, allergens, tags and portion sizes.'],
     ['Pricing', '/pricing', 'View pricing tiers, overrides and gap coverage.'],
+    ['Companies', '/companies', 'Manage company delivery settings, addresses and calendars.'],
+    ['Employees', '/employees', 'Manage company employees and ordering preferences.'],
   ];
 
   return (
@@ -63,7 +65,12 @@ export default function Home() {
         <h2 className="mb-3 text-xl font-semibold">Test areas</h2>
         <div className="grid gap-4 sm:grid-cols-2">
           {sections
-            .filter(([title]) => title !== 'Pricing' || user?.permissions.includes('pricing.read'))
+            .filter(([title]) => {
+              if (title === 'Pricing') return user?.permissions.includes('pricing.read');
+              if (title === 'Companies') return user?.permissions.includes('companies.read');
+              if (title === 'Employees') return user?.permissions.includes('employees.read');
+              return true;
+            })
             .map(([title, href, description]) => (
             <Link key={href} href={href} className="rounded border bg-white p-5 hover:border-slate-400">
               <h3 className="font-semibold">{title}</h3>
